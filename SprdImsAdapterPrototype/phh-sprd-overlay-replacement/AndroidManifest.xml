@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="me.phh.treble.overlay.sprdims_telephony">
+    <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="30" />
+    <overlay android:targetPackage="com.android.phone" android:priority="79" />
+    <application android:extractNativeLibs="false" android:usesNonSdkApi="true" />
+</manifest>

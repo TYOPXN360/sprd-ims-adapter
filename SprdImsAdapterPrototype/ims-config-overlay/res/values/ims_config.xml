@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Phase-1 diagnostic platform IMS service; does not announce registration. -->
+    <string name="config_ims_mmtel_package">com.vp19.sprdims.adapter.prototype</string>
+</resources>

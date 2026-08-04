@@ -1,0 +1,13 @@
+# Gradle
+.gradle/
+build/
+*.apk
+*.idsig
+*.apk.idsig
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store

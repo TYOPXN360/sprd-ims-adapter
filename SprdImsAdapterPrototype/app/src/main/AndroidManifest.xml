@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Diagnostic Android 11 MMTEL adapter prototype for the VP19 Spreadtrum vendor.
+  It is not deployable for calls: no IMS registration, capability, or call session
+  is reported until the proprietary IIMSRadio bridge is implemented.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.vp19.sprdims.adapter.prototype"
+    android:sharedUserId="android.uid.phone"
+    coreApp="true">
+    <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="30" />
+    <uses-permission android:name="android.permission.BIND_IMS_SERVICE" />
+    <application
+        android:directBootAware="true"
+        android:label="VP19 IMS adapter diagnostic"
+        android:persistent="true">
+        <service
+            android:name=".SprdImsService"
+            android:directBootAware="true"
+            android:exported="true"
+            android:permission="android.permission.BIND_IMS_SERVICE">
+            <intent-filter>
+                <action android:name="android.telephony.ims.ImsService" />
+            </intent-filter>
+            <meta-data android:name="android.telephony.ims.MMTEL_FEATURE" android:value="true" />
+            <meta-data android:name="android.telephony.ims.EMERGENCY_MMTEL_FEATURE" android:value="true" />
+        </service>
+    </application>
+</manifest>

@@ -1,0 +1,31 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.vp19.sprdims.adapter.prototype'
+    compileSdk 30
+    buildToolsVersion '36.0.0'
+
+    defaultConfig {
+        applicationId 'com.vp19.sprdims.adapter.prototype'
+        minSdk 30
+        targetSdk 30
+        versionCode 1
+        versionName '0.1-prototype'
+    }
+}
+
+// android-all is compile-only: it supplies Android 11 system API signatures
+// removed from the public SDK. It is never packaged into the APK.
+def android11FrameworkStub = files('/tmp/vp19-a11-framework-stub/android-all-11.jar')
+
+// Compile against the complete Android 11 framework API. The public SDK jar
+// omits ImsService/HwBinder and has an incomplete MmTelFeature surface.
+tasks.withType(JavaCompile).configureEach {
+    options.bootstrapClasspath = android11FrameworkStub
+}
+
+dependencies {
+    compileOnly android11FrameworkStub
+}
