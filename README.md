@@ -57,19 +57,25 @@ Android 11 framework (ImsResolver)
 
 ## 构建
 
-需要：
-
-- Android SDK（compileSdk 30，build-tools 36.0.0）
-- Android 11 完整 framework jar（`android-all-11.jar`），作为 compileOnly 依赖（`app/build.gradle` 中路径需按实际修改）
-- JDK 17
-
 ```bash
-cd SprdImsAdapterPrototype
-# 修改 app/build.gradle 中的 android11FrameworkStub 路径
-./gradlew assembleDebug
+# 见 tools/README.md 获取完整参数说明
+ANDROID_SDK=/path/to/android-sdk \
+ANDROID_ALL_JAR=/path/to/android-all-11.jar \
+JDK=/path/to/jdk-17 \
+APKTOOL_JAR=/path/to/apktool.jar \
+STOCK_IMS_APK=/path/to/stock-ims.apk \
+PLATFORM_PK8=/path/to/platform.pk8 \
+PLATFORM_CERT=/path/to/platform.x509.pem \
+bash tools/build.sh
 ```
 
-**注意**：`Vp19ImsRadioResponse` / `Vp19ImsRadioIndication`（展讯 HIDL 回调）和 `Vp19StdRadioResponse` / `Vp19StdRadioIndication`（标准回调）是通过脚本从原厂 ims.apk 反汇编 + smali 生成后合入 DEX 的，**不在本仓库的 Java 源码中**。完整构建需要这些生成步骤（详见后续文档/脚本）。
+构建产物：`out/SprdImsAdapterPrototype.apk`（平台签名）。
+
+**注意**：`Vp19ImsRadioResponse` / `Vp19ImsRadioIndication`（展讯 HIDL 回调）和
+`Vp19StdRadioResponse` / `Vp19StdRadioIndication`（标准回调）是通过
+`tools/gen_ims_callbacks.py` / `tools/gen_std_radio_callbacks.py` 从原厂 ims.apk
+反汇编 + 生成后合入 DEX 的，**不在 app 的 Java 源码中**。完整构建需要执行
+`tools/build.sh`（详见 `tools/README.md`）。
 
 ## 部署
 
@@ -100,6 +106,13 @@ SprdImsAdapterPrototype/
 └── build.gradle / settings.gradle
 
 SprdImsLegacyShim/                          # Android 8 展讯 IMS 扩展接口的编译期 shim（本地链接验证用）
+
+tools/
+├── build.sh                        # 一键构建脚本（反汇编→生成→编译→合并→签名）
+├── gen_ims_callbacks.py            # 生成展讯 HIDL 回调 smali
+├── gen_std_radio_callbacks.py      # 生成标准 radio 回调 Java
+├── ExtractRadioApi.java            # 反射提取标准 radio 接口抽象方法
+└── README.md                       # 构建工具链说明
 ```
 
 ## 背景与限制
