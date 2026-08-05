@@ -113,6 +113,16 @@ def gen(iface, cls, out_dir, base_dir):
         if name == 'getIMSCurrentCallsResponse':
             # Forward the raw Call list to the service for state parsing.
             lines += ['    invoke-static {p2}, Lcom/vp19/sprdims/adapter/prototype/SprdImsService;->onImsCurrentCallsRaw(Ljava/util/ArrayList;)V']
+        if name == 'IMSWifiParamInd':
+            # VoWiFi: modem reports WiFi registration params.
+            lines += ['    invoke-static {p1, p2}, Lcom/vp19/sprdims/adapter/prototype/SprdVoWifiController;->onWifiParamIndication(ILjava/util/List;)V']
+        if name == 'IMSNetworkInfoChangedInd':
+            # VoWiFi: modem reports network info change.
+            lines += ['    invoke-static {p1, p2}, Lcom/vp19/sprdims/adapter/prototype/SprdVoWifiController;->onNetworkInfoChanged(ILjava/lang/Object;)V']
+        if name == 'getIMSVoiceCallAvailabilityResponse':
+            # Forward voice availability (bit 0x2 = VoWiFi) to the controller.
+            lines += ['    const/4 v5, 0x0',
+                      '    invoke-static {v5, p2}, Lcom/vp19/sprdims/adapter/prototype/SprdVoWifiController;->onVoiceCallAvailability(II)V']
         if name in CALL_IND:
             # Call state changed: ask the modem for the current call list.
             lines += ['    invoke-static {}, Lcom/vp19/sprdims/adapter/prototype/SprdImsService;->requestImsCurrentCalls()V']

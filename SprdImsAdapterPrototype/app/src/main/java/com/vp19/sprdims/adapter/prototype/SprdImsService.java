@@ -24,7 +24,7 @@ public final class SprdImsService extends ImsService {
     static final String EXT_RADIO = "vendor.sprd.hardware.radio@1.0::IExtRadio";
     static final String EXT_RADIO_INSTANCE = "slot1";
 
-    private volatile ImsRegistrationImplBase registration = new ImsRegistrationImplBase();
+    private static volatile ImsRegistrationImplBase registration = new ImsRegistrationImplBase();
     private static final java.util.List<CallStateListener> CALL_STATE_LISTENERS =
             new java.util.concurrent.CopyOnWriteArrayList<>();
     /** Radio proxy shared with call sessions; set by the HIDL bridge. */
@@ -32,6 +32,7 @@ public final class SprdImsService extends ImsService {
     static volatile Class<?> radioProxyClass;
     private static volatile boolean mtCallNotified;
     private static volatile long mtCallNotifiedAt;
+    private static volatile SprdImsConfigImplBase configImpl;
 
     @Override
     public MmTelFeature createMmTelFeature(int slotId) {
@@ -51,6 +52,25 @@ public final class SprdImsService extends ImsService {
     public ImsRegistrationImplBase getRegistration(int slotId) {
         Log.i(TAG, "getRegistration slot=" + slotId);
         return registration;
+    }
+
+    @Override
+    public android.telephony.ims.stub.ImsConfigImplBase getConfig(int slotId) {
+        Log.i(TAG, "getConfig slot=" + slotId);
+        if (configImpl == null) {
+            synchronized (SprdImsService.class) {
+                if (configImpl == null) {
+                    configImpl = new SprdImsConfigImplBase(slotId);
+                }
+            }
+        }
+        return configImpl;
+    }
+
+    /** Modem reports WFC registration (IMSWifiParamInd); reflect to framework. */
+    static void reportWfcRegistered() {
+        Log.i(TAG, "WFC registered, reporting IMS WIFI registration to framework");
+        registration.onRegistered(ImsRegistrationImplBase.REGISTRATION_TECH_NW);
     }
 
     private static void probeSprdImsRadioAsync() {
