@@ -50,3 +50,20 @@
 
 完整构建链见 `tools/build.sh`（需 `ANDROID_ALL_JAR` 提供 framework API 与 hidl-base/radio 类；
 本机环境也可从设备 `framework.jar` + 原厂 `ims.apk` 的 smali 提取等价类）。
+
+## 2026-08-06 补充：挂断修复
+
+拨号后（对方响铃中）挂断无效的根因：`SprdImsCallSession.terminate()` 用
+`Integer.parseInt(callId)` 作为 modem callIndex，但 `callId` 是 framework 的
+session id（如 "11"），不是 modem 的 call index（单呼叫为 1），导致
+`hangup(serial, 11)` 挂错目标、modem 本地释放但网络未释放。
+
+修复：`terminate()` 固定 `callIndex = 1`（单卡单呼叫场景）。
+
+## 部署组合（全部功能正常）
+
+- adapter v3（`SprdImsAdapterVowifi3.apk`，SHA-256 `c8047cc4...`）
+- Telecom 原版（`7341923d`）
+- TeleService callerid（`94f12d2c`，presentation=1）
+- framework 原版（`6300526e`）
+- 验证：来电号码显示、去电、挂断全部正常

@@ -177,16 +177,12 @@ final class SprdImsCallSession extends ImsCallSessionImplBase {
         Log.i(TAG, "terminate reason=" + reason);
         try {
             int serial = ++serialCounter;
-            // Hang up the specific call: IExtRadio.hangup(serial, callIndex)
-            // (transaction 0x0d). notifyIMSCallEnd only informs the modem and
-            // does not actually release an active call.
+            // Hang up the call: IExtRadio.hangup(serial, callIndex)
+            // (transaction 0x0d). The modem call index is 1 for a single
+            // call; callId is the framework session id, NOT the modem index,
+            // so do not parse it here (parsing it produced wrong hangup
+            // targets and left the peer still ringing).
             int callIndex = 1;
-            if (callId != null) {
-                try {
-                    callIndex = Integer.parseInt(callId);
-                } catch (NumberFormatException ignored) {
-                }
-            }
             Method hangupMethod = radioClass.getMethod("hangup", int.class, int.class);
             hangupMethod.invoke(radio, serial, callIndex);
             Log.i(TAG, "IExtRadio.hangup issued serial=" + serial + " callIndex=" + callIndex);
