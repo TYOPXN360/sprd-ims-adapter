@@ -15,7 +15,7 @@ VP19 手表原厂是 Android 8.1（展讯 SC8541E），vendor 分区保留 Andro
 1. 作为 MMTEL IMS 服务被 `ImsResolver` 绑定
 2. 通过展讯私有 HIDL 接口 `vendor.sprd.hardware.radio@1.0::IExtRadio/slot1` 直接驱动原厂 modem
 3. 复用原厂 ims.apk 里的 29 个 HIDL generated 类（`IExtRadio` / `IIMSRadioResponse` / `IIMSRadioIndication`），通过 `smali` 回编进 APK
-4. 实现完整的通话闭环：**拨出、来电、接听、挂断、对方挂断检测**
+4. 实现完整的通话闭环：**拨出、来电、接听、挂断、对方挂断检测、来电号码显示**
 
 ## 功能状态
 
@@ -25,9 +25,10 @@ VP19 手表原厂是 Android 8.1（展讯 SC8541E），vendor 分区保留 Andro
 | 拨出电话（`videoPhoneDial`，事务 0x8c） | ✅ |
 | 来电接入（`notifyIncomingCall`，含去重） | ✅ |
 | 接听（`acceptCall`，事务 0x27） | ✅ |
-| 挂断（`hangup(serial, callIndex)`，事务 0x0d） | ✅ |
+| 挂断（`hangup(serial, callIndex=1)`，事务 0x0d） | ✅ |
 | 对方挂断检测（`getIMSCurrentCalls` 空列表 → terminated） | ✅ |
-| 来电号码显示 | ❌（GSI framework 的 extras 清洗导致号码丢失，未 patch bootclasspath） |
+| 来电号码显示 | ✅ |
+| VoWiFi（Wi-Fi Calling） | ⚙️ 代码层完善（所在地区无 VoWiFi 网络，未实测） |
 
 ## 工作原理
 
@@ -36,7 +37,9 @@ Android 11 framework (ImsResolver)
   └─ com.vp19.sprdims.adapter.prototype.SprdImsService (MMTEL)
        ├─ ImsRegistrationImplBase.onRegistered(LTE)
        ├─ SprdMmTelFeature (capability: VOICE)
+       ├─ SprdImsConfigImplBase (WFC / ImsConfig)
        ├─ SprdImsCallSession (通话状态机)
+       ├─ SprdVoWifiController (VoWiFi modem 命令)
        └─ SprdHidlRegistrationBridge
             └─ vendor.sprd.hardware.radio@1.0::IExtRadio/slot1 (HIDL)
                  ├─ setIMSResponseFunctions()   注册回调
@@ -44,16 +47,40 @@ Android 11 framework (ImsResolver)
                  ├─ videoPhoneDial()            拨号 (0x8c)
                  ├─ acceptCall()                接听 (0x27)
                  ├─ hangup()                    挂断 (0x0d)
+                 ├─ notifyVoWifiEnable()        VoWiFi 开关
+                 ├─ enableWiFiParamReport()     VoWiFi 参数上报
                  ├─ getIMSCurrentCalls()        查询呼叫列表 (0xc4)
-                 └─ IIMSRadioIndication         来电/状态推送
+                 └─ IIMSRadioIndication         来电/状态/WiFi 参数推送
 ```
 
 关键点：
 
-- **HIDL 回调类**（`Vp19ImsRadioResponse` / `Vp19ImsRadioIndication`）由原厂 ims.apk 的 29 个 HIDL generated 类 + 生成的 smali 构成，随 APK 编译进 `classes2.dex`
-- **标准 radio 回调**（`Vp19StdRadioResponse` / `Vp19StdRadioIndication`，129+45 方法）注册到 `IExtRadio.setResponseFunctions`，接收 `dial`/`hangup`/`callStateChanged` 等标准响应
-- 由于 GSI 的 BOOTCLASSPATH 缺少 `android.hidl.base.V1_0` 和 `android.hardware.radio.V1_0`，这些类从 `android-all-11.jar` 提取后**合入 APK 的 DEX**
+- **HIDL 回调类**（`Vp19ImsRadioResponse` / `Vp19ImsRadioIndication`）由原厂 ims.apk 的 29 个 HIDL generated 类 + 生成的 smali 构成，随 APK 编译进 DEX
+- **标准 radio 回调**（`Vp19StdRadioResponse` / `Vp19StdRadioIndication`，139+55 方法）注册到 `IExtRadio.setResponseFunctions`，接收 `dial`/`hangup`/`callStateChanged` 等标准响应
+- 由于 GSI 的 BOOTCLASSPATH 缺少 `android.hidl.base.V1_0` 和 `android.hardware.radio.V1_0`，这些类从原厂 ims.apk 的 smali 回编后**合入 APK 的 DEX**
 - 拨号用展讯专属 `videoPhoneDial`（而非标准 `dial`——CS 域在本机未注册）
+- **挂断**：`terminate()` 固定 `callIndex=1`（modem 单呼叫 index），不用 framework 的 callId（它是 session id，会导致挂断无效）
+
+## 来电号码显示修复（caller-id-fix）
+
+`caller-id-fix/` 目录包含来电号码显示「未知」的完整根因分析与修复：
+
+- **根因**：Telecom `Call` 构造时 `setHandle(null, 1)` 预置 `mHandlePresentation=1`，导致后续 `setHandle(号码, 1)` 被跳过；同时 `toParcelableCall` 只在 `presentation==1` 时传 handle，形成死锁
+- **修复**：TeleService `updateAddress` 强制 `presentation=1`（`caller-id-fix/TeleService-callerid-clean-signed.apk`）
+- **验证**：RINGING 时 `Call.handle=tel:号码`，UI 正常显示
+
+详见 [`caller-id-fix/CALLER_ID_FIX.md`](caller-id-fix/CALLER_ID_FIX.md)。
+
+## VoWiFi 完善（vowifi）
+
+`vowifi/` 目录包含 Wi-Fi Calling 的代码层完善：
+
+- **`SprdImsConfigImplBase`**：`ImsConfigImplBase` 子类，处理 framework 的 WFC 配置查询/设置
+- **`SprdVoWifiController`**：VoWiFi 控制器，反射调用 `notifyVoWifiEnable` / `enableWiFiParamReport` / `getIMSVoiceCallAvailability`
+- 回调转发：`IMSWifiParamInd` / `IMSNetworkInfoChangedInd` / `getIMSVoiceCallAvailabilityResponse`
+- **注意**：所在地区无 VoWiFi 网络，仅代码/构建完善，未实测
+
+详见 [`vowifi/VOWIFI.md`](vowifi/VOWIFI.md)。
 
 ## 构建
 
@@ -88,6 +115,17 @@ adb shell setprop persist.dbg.volte_avail_ovr0 1
 adb shell setprop persist.dbg.volte_avail_ovr 1
 ```
 
+### 稳定部署组合（v1.1，全部功能正常）
+
+| 组件 | SHA-256 |
+|------|---------|
+| adapter v3（release 附件） | `c8047cc4129a1ddb1c1be59087b952602ba22e4cb5bb6299d9df6507426a055f` |
+| Telecom 原版 | `7341923d4f135b4178f5119fe03b4373d98574c7b93892f55a7206438504721b` |
+| TeleService（callerid） | `94f12d2c015593949786d08763e3238b96f0858cb10935b1b63d6a5dc021a117` |
+| framework 原版 | `6300526e770fe1261239f2a853e93af6b75982aaa9bc3b6cb9ec0aa05bf22b60` |
+
+验证：来电号码显示、去电、挂断全部正常。
+
 ## 目录结构
 
 ```
@@ -97,15 +135,20 @@ SprdImsAdapterPrototype/
 │   └── src/main/
 │       ├── AndroidManifest.xml
 │       └── java/com/vp19/sprdims/adapter/prototype/
-│           ├── SprdImsService.java          # ImsService 入口 + 注册上报
+│           ├── SprdImsService.java          # ImsService 入口 + 注册上报 + getConfig
 │           ├── SprdMmTelFeature.java        # MMTEL feature + 来电通知
 │           ├── SprdImsCallSession.java      # 通话会话状态机（拨号/接听/挂断）
-│           └── SprdHidlRegistrationBridge.java  # HIDL 回调注册 + enableIMS
+│           ├── SprdHidlRegistrationBridge.java  # HIDL 回调注册 + enableIMS
+│           ├── SprdImsConfigImplBase.java   # ImsConfig / WFC 配置
+│           └── SprdVoWifiController.java    # VoWiFi modem 命令
 ├── phh-sprd-overlay-replacement/           # 替换 PHH overlay（config_ims_mmtel_package）
 ├── ims-config-overlay/                      # IMS 配置 overlay
 └── build.gradle / settings.gradle
 
 SprdImsLegacyShim/                          # Android 8 展讯 IMS 扩展接口的编译期 shim（本地链接验证用）
+
+caller-id-fix/                              # 来电号码显示修复（文档 + 修复 APK）
+vowifi/                                     # VoWiFi 完善（文档 + 稳定 APK）
 
 tools/
 ├── build.sh                        # 一键构建脚本（反汇编→生成→编译→合并→签名）
@@ -119,9 +162,15 @@ tools/
 
 - **设备**：VP19 / S10 Max / sl8541e_1h10，展讯 SC8541E，Android 8.1 vendor + kernel 4.4.83
 - **网络**：中国联通 LTE-only（CS 语音未注册），通话依赖 IMS/VoLTE
-- **来电号码显示**：号码已传递到 framework（profile 含 `EXTRA_OI`），但 GSI framework 的 `ImsCallProfile.maybeCleanseExtras`/`filterValues` 在真实 Binder 传输下清除了 extras，导致 `ImsPhoneConnection` 读不到号码。修复需 patch bootclasspath（framework.jar / telephony-common.jar），有启动校验风险，未做。
-- **VoWiFi**：未实现（原厂 VoWiFi 组件为 Android 8，不在本适配器范围）
+- **重启初始化**：重启后 adapter 需约 30 秒由 ImsResolver 自动初始化（IMS 注册恢复前拨号会失败）
+- **VoWiFi**：代码层完善，无实际网络未实测
+- **CS（2G/3G）语音**：未注册（LTE-only + IMS VoLTE 方案）
+
+## Release
+
+- [v1.1](https://github.com/TYOPXN360/sprd-ims-adapter/releases/tag/v1.1)：来电号码显示 + VoWiFi + 挂断修复（Latest）
+- v1.0：初版（VoLTE 通话闭环）
 
 ## 免责声明
 
-本项目为逆向工程/DIY 产物，仅供个人研究学习。使用前请备份数据，刷机有风险。
+本项目为逆向工程/DIY 产物，由 **AI 辅助创建**，仅供个人研究学习。使用前请备份数据，刷机有风险。
